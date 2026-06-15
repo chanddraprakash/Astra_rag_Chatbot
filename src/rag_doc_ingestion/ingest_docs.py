@@ -1,5 +1,6 @@
 import logging
 import chromadb
+import traceback
 from llama_index.core import VectorStoreIndex,SimpleDirectoryReader,StorageContext
 from llama_index.core.node_parser import SimpleNodeParser
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
@@ -14,9 +15,13 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-settings = doc_ingestion_settings
+settings = doc_ingestion_settings()
+
 logger.info("Loading HuggingFace Embedding model")
-embed_model = HuggingFaceEmbedding()
+
+embed_model = HuggingFaceEmbedding(
+    model_name="BAAI/bge-small-en"
+)
 
 def build_vector_store_from_documents():
     logger.info("Starting vector store ingestion process")
@@ -33,23 +38,24 @@ def build_vector_store_from_documents():
         nodes=parser.get_nodes_from_documents(documents)
         logger.info(f"parsed {len(nodes)} nodes.")
         logger.info(f"initializing ChromaDB Persistent client at:{vector_store_path}")
-        db=chromadb.persistentClient(path=vector_store_path)
-        chroma_collection = db.get_or_collection(name=collection_name)
+        db = chromadb.PersistentClient(path=vector_store_path)
+        chroma_collection = db.get_or_create_collection(name=collection_name)
         logger.info(f"Creating chroma vector store with collection path: {collection_name}")
-        vector_store=ChromaVectorStore(collection_name=collection_name)
+        vector_store = ChromaVectorStore(
+            chroma_collection=chroma_collection
+        )
 
         storage_context=StorageContext.from_defaults(vector_store=vector_store)
         logger.info("building vector store index.")
-        index=VectorStoreIndex(
+        index = VectorStoreIndex(
             nodes,
             storage_context=storage_context,
-            vector_store=vector_store,
-            embedding=embed_model,
+            embed_model=embed_model,
         )
         logger.info(f"Vector store build completed successfully")
         return 0
     except Exception as e:
-        logger.error(f"error during vector store build: {e}")
+        logger.error(traceback.format_exc())
         return 1
 if __name__ == "__main__":
     build_vector_store_from_documents()
